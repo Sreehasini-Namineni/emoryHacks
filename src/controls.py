@@ -8,6 +8,8 @@ class Controls:
         self.volume = 50
         self.mapping = {
             "peace_clockwise": self.volume_up,
+            "three_turn_right": self.next_track,
+            "three_turn_left": self.previous_track,
         }
 
     def handle(self, gesture: str) -> None:
@@ -18,3 +20,9 @@ class Controls:
     def volume_up(self) -> None:
         self.volume = min(100, self.volume + 5)
         print(f"Volume increased -> {self.volume}")
+
+    def next_track(self) -> None:
+        print("Next track >>")
+
+    def previous_track(self) -> None:
+        print("<< Previous track")
