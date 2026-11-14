@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
-from gestures import PeaceClockwise, ThreeTurn
+from gestures import PeaceClockwise, ThreeSideways, ThreeTurn
 
 MODEL_PATH = Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
 
@@ -42,6 +42,7 @@ def main() -> None:
     cap = open_webcam()
     tracker = PeaceClockwise()
     track_turn = ThreeTurn()
+    ac_move = ThreeSideways()
     controls = Controls()
 
     print("SANITY CHECK: peace sign (index+middle up) rotate clockwise -> terminal prints Volume increased.")
@@ -66,6 +67,9 @@ def main() -> None:
             track = track_turn.update(lm)
             if track:
                 controls.handle(track)
+            ac = ac_move.update(lm)
+            if ac:
+                controls.handle(ac)
 
             if n_hands:
                 for landmarks in result.hand_landmarks:
@@ -86,6 +90,7 @@ def main() -> None:
                 (255, 255, 255),
                 2,
             )
+            cv2.putText(frame, f"AC {controls.ac}", (16, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             cv2.imshow("Step 3 — Hands", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
