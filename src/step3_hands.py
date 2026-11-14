@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
-from gestures import PeaceRotation
+from gestures import PeaceRotation, is_thumbsup, is_thumbsdown
 
 MODEL_PATH = Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
 
@@ -80,7 +80,11 @@ def main() -> None:
                 draw_hand(frame, landmarks)
 
             if lm is not None:
-                status = "PEACE" if tracker.holding else f"{CONTROL_HAND.upper()} HAND"
+                status = ("PEACE" if tracker.holding 
+                          else "THUMBS UP" if is_thumbsup(lm)
+                          else "THUMBS DOWN" if is_thumbsdown(lm)
+                          else f"HAND DETECTED ({n_hands})")
+
                 color = (0, 255, 0)
             elif n_hands:
                 status = f"SHOW {CONTROL_HAND.upper()} HAND"

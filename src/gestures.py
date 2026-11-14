@@ -23,6 +23,8 @@ MISS_LIMIT = 8               # frames without the pose before reset
 def _d(a, b) -> float:
     return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
 
+def _len(lm, tip: int, mcp: int) -> float:
+    return _d(lm[tip], lm[mcp])
 
 def _ratio(lm, tip: int, mcp: int, palm: float) -> float:
     return _d(lm[tip], lm[mcp]) / palm
@@ -46,6 +48,47 @@ def is_peace(lm, holding: bool = False) -> bool:
         return up > EXTENDED_MIN_HOLD and down < CURLED_MAX_HOLD and up > down
     return up > EXTENDED_MIN and down < CURLED_MAX and up > down * SEPARATION
 
+def is_thumbsup(lm):
+    palm = _d(lm[0], lm[9]) + 1e-6
+
+    index = _len(lm, 8, 5) / palm
+    middle = _len(lm, 12, 9) / palm
+    ring = _len(lm, 16, 13) / palm
+    pinky = _len(lm, 20, 17) / palm
+
+    thumb = _len(lm, 4, 2) / palm
+
+    thumb_up = lm[4].y < lm[2].y - (0.15 * palm)
+
+    return (
+        thumb > 0.7
+        and thumb_up
+        and index < 0.75
+        and middle < 0.75
+        and ring < 0.75
+        and pinky < 0.75
+    )
+
+def is_thumbsdown(lm):
+    palm = _d(lm[0], lm[9]) + 1e-6
+
+    index = _len(lm, 8, 5) / palm
+    middle = _len(lm, 12, 9) / palm
+    ring = _len(lm, 16, 13) / palm
+    pinky = _len(lm, 20, 17) / palm
+
+    thumb = _len(lm, 4, 2) / palm
+
+    thumb_down = lm[4].y > lm[2].y + (0.15 * palm)
+
+    return (
+        thumb > 0.7
+        and thumb_down
+        and index < 0.75
+        and middle < 0.75
+        and ring < 0.75
+        and pinky < 0.75
+    )
 
 class PeaceRotation:
     """Peace sign held while the wrist travels in a circle.
