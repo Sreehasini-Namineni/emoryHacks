@@ -183,18 +183,18 @@ def _is_upright(lm) -> bool:
 
 
 class ThreeTurn:
-    """Three fingers up, palm turned 15 deg left or right and then back to where it started."""
+    """Three fingers up, hand moved left or right and then back to where it started."""
 
     right = "three_turn_right"
     left = "three_turn_left"
-    _step = math.radians(15)
-    _home = math.radians(8)   # this close to the start counts as back
-    _window_s = 0.8           # time to make the turn
-    _return_s = 1.5           # time to turn back after it
+    _min_dx = 0.06     # sideways travel, fraction of frame width
+    _home_dx = 0.03    # this close to the start counts as back
+    _window_s = 0.8    # time to make the move
+    _return_s = 1.5    # time to come back after it
 
     def __init__(self) -> None:
         self._hist: list[tuple[float, float]] = []
-        self._pending: tuple[str, float, float] | None = None  # (gesture, start yaw, turn time)
+        self._pending: tuple[str, float, float] | None = None  # (gesture, start x, move time)
 
     def update(self, lm) -> str | None:
         # Hand must point up (sideways three fingers is the AC gesture).
@@ -204,11 +204,11 @@ class ThreeTurn:
             return None
 
         now = time.time()
-        yaw = _palm_yaw(lm)
+        x = lm[9].x
 
         if self._pending is not None:
             gesture, start, t = self._pending
-            if abs(_wrap(yaw - start)) <= self._home:
+            if abs(x - start) <= self._home_dx:
                 self._pending = None
                 self._hist.clear()
                 return gesture
@@ -217,16 +217,16 @@ class ThreeTurn:
                 self._hist.clear()
             return None
 
-        self._hist.append((now, yaw))
+        self._hist.append((now, x))
         self._hist = [h for h in self._hist if now - h[0] <= self._window_s]
         if len(self._hist) < 3:
             return None
 
         start = self._hist[0][1]
-        turn = _wrap(yaw - start)
-        if abs(turn) >= self._step:
-            # Positive yaw change is a turn to the user's left (checked on camera).
-            self._pending = (self.left if turn > 0 else self.right, start, now)
+        dx = x - start
+        if abs(dx) >= self._min_dx:
+            # Frame is mirrored, so +x is the user's right.
+            self._pending = (self.right if dx > 0 else self.left, start, now)
         return None
 
 
