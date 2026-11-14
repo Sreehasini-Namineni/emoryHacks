@@ -1,97 +1,156 @@
-"""Named gesture detectors. Map these names to actions in controls.py later."""
+"""Named gesture detectors. Map these names to actions in controls.py."""
 
 from __future__ import annotations
 
 import math
 import time
+from collections import deque
+
+# Finger length / palm length ratios.
+EXTENDED_MIN = 0.80
+CURLED_MAX = 0.72
+SEPARATION = 1.15
+EXTENDED_MIN_HOLD = 0.65
+CURLED_MAX_HOLD = 0.90
+
+TRACK_POINT = 0              # landmark whose path we follow (0 = wrist)
+WINDOW = 30                  # recent positions used to estimate the circle center
+MIN_POINTS = 12              # positions needed before measuring
+MIN_RADIUS_PALM = 0.30       # circle radius must exceed this fraction of palm length
+STEP = math.radians(30)      # sweep around the circle needed per action
+MISS_LIMIT = 8               # frames without the pose before reset
 
 
 def _d(a, b) -> float:
     return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
 
-
 def _len(lm, tip: int, mcp: int) -> float:
     return _d(lm[tip], lm[mcp])
 
+def _ratio(lm, tip: int, mcp: int, palm: float) -> float:
+    return _d(lm[tip], lm[mcp]) / palm
 
-def is_peace(lm, relaxed: bool = False) -> bool:
-    """Index+middle clearly longer than ring+pinky. Thumb is ignored (too noisy)."""
+
+def _wrap(a: float) -> float:
+    while a > math.pi:
+        a -= 2 * math.pi
+    while a < -math.pi:
+        a += 2 * math.pi
+    return a
+
+
+def is_peace(lm, holding: bool = False) -> bool:
+    """Index+middle extended, ring+pinky curled, all as ratios of palm length."""
     palm = _d(lm[0], lm[9]) + 1e-6
+    up = min(_ratio(lm, 8, 5, palm), _ratio(lm, 12, 9, palm))
+    down = max(_ratio(lm, 16, 13, palm), _ratio(lm, 20, 17, palm))
+
+    if holding:
+        return up > EXTENDED_MIN_HOLD and down < CURLED_MAX_HOLD and up > down
+    return up > EXTENDED_MIN and down < CURLED_MAX and up > down * SEPARATION
+
+def is_thumbsup(lm):
+    palm = _d(lm[0], lm[9]) + 1e-6
+
     index = _len(lm, 8, 5) / palm
     middle = _len(lm, 12, 9) / palm
     ring = _len(lm, 16, 13) / palm
     pinky = _len(lm, 20, 17) / palm
-    if relaxed:
-        return index > 0.65 and middle > 0.65 and index > ring and middle > ring and ring < 0.9 and pinky < 0.9
+
+    thumb = _len(lm, 4, 2) / palm
+
+    thumb_up = lm[4].y < lm[2].y - (0.15 * palm)
+
     return (
-        index > 0.8
-        and middle > 0.8
-        and ring < 0.72
-        and pinky < 0.72
-        and index > ring * 1.15
-        and middle > ring * 1.15
+        thumb > 0.7
+        and thumb_up
+        and index < 0.75
+        and middle < 0.75
+        and ring < 0.75
+        and pinky < 0.75
     )
 
-
-def is_three(lm, relaxed: bool = False) -> bool:
-    """Index+middle+ring clearly longer than pinky. Thumb is ignored (too noisy)."""
+def is_thumbsdown(lm):
     palm = _d(lm[0], lm[9]) + 1e-6
+
     index = _len(lm, 8, 5) / palm
     middle = _len(lm, 12, 9) / palm
     ring = _len(lm, 16, 13) / palm
     pinky = _len(lm, 20, 17) / palm
-    if relaxed:
-        return index > 0.65 and middle > 0.65 and ring > 0.65 and ring > pinky and pinky < 0.9
-    return index > 0.8 and middle > 0.8 and ring > 0.8 and pinky < 0.72 and ring > pinky * 1.15
 
+    thumb = _len(lm, 4, 2) / palm
 
-class PeaceClockwise:
-    name = "peace_clockwise"
-    _step = math.radians(30)
+    thumb_down = lm[4].y > lm[2].y + (0.15 * palm)
+
+    return (
+        thumb > 0.7
+        and thumb_down
+        and index < 0.75
+        and middle < 0.75
+        and ring < 0.75
+        and pinky < 0.75
+    )
+
+class PeaceRotation:
+    """Peace sign held while the wrist travels in a circle.
+
+    Emits peace_clockwise or peace_counterclockwise every STEP of sweep.
+    """
+
+    CW = "peace_clockwise"
+    CCW = "peace_counterclockwise"
 
     def __init__(self) -> None:
         self.holding = False
-        self._prev: float | None = None
-        self._acc = 0.0
+        self.offset = 0.0                       # radians swept since last action (readout)
+        self._pts: deque[tuple[float, float]] = deque(maxlen=WINDOW)
         self._miss = 0
 
-    def update(self, lm) -> str | None:
-        pose = bool(lm) and is_peace(lm, relaxed=self.holding)
+    def _reset(self) -> None:
+        self.holding = False
+        self.offset = 0.0
+        self._pts.clear()
+
+    def update(self, lm, aspect: float = 16 / 9) -> str | None:
+        pose = bool(lm) and is_peace(lm, holding=self.holding)
         if not pose:
             self._miss += 1
-            if self._miss > 8:
-                self.holding = False
-                self._prev = None
-                self._acc = 0.0
-            return None
-
-        # Palm heading stays stable while the fingertips jitter.
-        angle = math.atan2(lm[9].y - lm[0].y, lm[9].x - lm[0].x)
-
-        if not self.holding or self._prev is None:
-            self.holding = True
-            self._miss = 0
-            self._prev = angle
+            if self._miss > MISS_LIMIT:
+                self._reset()
             return None
 
         self._miss = 0
-        delta = angle - self._prev
-        if delta > math.pi:
-            delta -= 2 * math.pi
-        elif delta < -math.pi:
-            delta += 2 * math.pi
-        self._prev = angle
+        self.holding = True
 
-        # Webcam is mirrored; clockwise on-screen and in-world disagree on sign.
-        # Count rotation magnitude so a clockwise turn always registers.
-        if abs(delta) < 0.03:
+        # Scale x by the frame aspect ratio so a circle is a circle, not an ellipse.
+        p = lm[TRACK_POINT]
+        self._pts.append((p.x * aspect, p.y))
+        if len(self._pts) < MIN_POINTS:
             return None
-        self._acc += abs(delta)
-        if self._acc >= self._step:
-            self._acc -= self._step
-            return self.name
-        return None
 
+        n = len(self._pts)
+        cx = sum(x for x, _ in self._pts) / n
+        cy = sum(y for _, y in self._pts) / n
+        radius = sum(math.hypot(x - cx, y - cy) for x, y in self._pts) / n
+
+        palm = math.hypot((lm[9].x - lm[0].x) * aspect, lm[9].y - lm[0].y) + 1e-6
+        if radius < MIN_RADIUS_PALM * palm:
+            self.offset = 0.0                   # not moving in a circle; ignore jitter
+            return None
+        
+        # Frame is flipped before detection, so this matches the screen.
+        # In image coordinates (y down), increasing angle = clockwise on screen.
+        (px, py), (x, y) = self._pts[-2], self._pts[-1]
+        delta = _wrap(math.atan2(y - cy, x - cx) - math.atan2(py - cy, px - cx))
+        self.offset += delta
+
+        if self.offset >= STEP:
+            self.offset -= STEP
+            return self.CW
+        if self.offset <= -STEP:
+            self.offset += STEP
+            return self.CCW
+        return None
 
 def _palm_yaw(lm) -> float:
     """Left/right facing of the palm (turning around the vertical axis), from the palm normal."""
