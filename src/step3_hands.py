@@ -12,7 +12,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camera import open_webcam
+from controls import Controls
 from drawing import draw_hand
+from gestures import PeaceClockwise
 
 MODEL_PATH = Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
 
@@ -38,9 +40,10 @@ def main() -> None:
     )
 
     cap = open_webcam()
+    tracker = PeaceClockwise()
+    controls = Controls()
 
-    print("SANITY CHECK: hold up a hand -> green skeleton + HAND DETECTED.")
-    print("Face only, or cover the camera -> NO HAND.")
+    print("SANITY CHECK: peace sign (index+middle up) rotate clockwise -> terminal prints Volume increased.")
 
     with HandLandmarker.create_from_options(options) as landmarker:
         while True:
@@ -55,16 +58,30 @@ def main() -> None:
             result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
             n_hands = len(result.hand_landmarks)
+            lm = result.hand_landmarks[0] if n_hands else None
+            gesture = tracker.update(lm)
+            if gesture:
+                controls.handle(gesture)
+
             if n_hands:
                 for landmarks in result.hand_landmarks:
                     draw_hand(frame, landmarks)
-                status = f"HAND DETECTED ({n_hands})"
+                status = "PEACE" if tracker.holding else f"HAND DETECTED ({n_hands})"
                 color = (0, 255, 0)
             else:
                 status = "NO HAND"
                 color = (0, 0, 255)
 
             cv2.putText(frame, status, (16, 36), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+            cv2.putText(
+                frame,
+                f"Volume {controls.volume}",
+                (16, 76),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                (255, 255, 255),
+                2,
+            )
             cv2.imshow("Step 3 — Hands", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
