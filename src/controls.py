@@ -10,6 +10,7 @@ class Controls:
         self.last_action = ""
         self.mapping = {
             "peace_clockwise": self.volume_up,
+            "peace_counterclockwise": self.volume_down,
             "three_turn_right": self.next_track,
             "three_turn_left": self.previous_track,
             "three_sideways_up": self.ac_up,
@@ -24,6 +25,11 @@ class Controls:
     def volume_up(self) -> None:
         self.volume = min(100, self.volume + 5)
         self.last_action = "Volume UP"
+
+    def volume_down(self) -> None:
+            self.volume = max(0, self.volume - 5)
+            self.last_action = "Volume DOWN"
+    
     def next_track(self) -> None:
         print("Next track >>")
 
@@ -38,6 +44,3 @@ class Controls:
         self.ac = max(0, self.ac - 1)
         print(f"AC decreased -> {self.ac}")
  
-    def volume_down(self) -> None:
-        self.volume = max(0, self.volume - 5)
-        self.last_action = "Volume DOWN"
