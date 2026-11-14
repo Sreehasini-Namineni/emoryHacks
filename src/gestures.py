@@ -163,15 +163,6 @@ def is_three(lm, relaxed: bool = False) -> bool:
     return index > 0.8 and middle > 0.8 and ring > 0.8 and pinky < 0.72 and ring > pinky * 1.15
 
 
-def _palm_yaw(lm) -> float:
-    """Left/right facing of the palm (turning around the vertical axis), from the palm normal."""
-    ax, ay, az = lm[5].x - lm[0].x, lm[5].y - lm[0].y, lm[5].z - lm[0].z
-    bx, by, bz = lm[17].x - lm[0].x, lm[17].y - lm[0].y, lm[17].z - lm[0].z
-    nx = ay * bz - az * by
-    nz = ax * by - ay * bx
-    return math.atan2(nx, nz)
-
-
 def _is_sideways(lm) -> bool:
     """Fingers pointing left/right: wrist -> middle knuckle is more horizontal than vertical."""
     return abs(lm[9].x - lm[0].x) > abs(lm[9].y - lm[0].y)
@@ -228,11 +219,6 @@ class ThreeTurn:
             # Frame is mirrored, so +x is the user's right.
             self._pending = (self.right if dx > 0 else self.left, start, now)
         return None
-
-
-def _wrap(a: float) -> float:
-    return (a + math.pi) % (2 * math.pi) - math.pi
-
 
 class ThreeSideways:
     """Three fingers pointing sideways, moved up or down and then back to where it started."""
