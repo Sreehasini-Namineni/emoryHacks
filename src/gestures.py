@@ -31,6 +31,48 @@ def is_peace(lm, relaxed: bool = False) -> bool:
         and middle > ring * 1.15
     )
 
+def is_thumbsup(lm):
+    palm = _d(lm[0], lm[9]) + 1e-6
+
+    index = _len(lm, 8, 5) / palm
+    middle = _len(lm, 12, 9) / palm
+    ring = _len(lm, 16, 13) / palm
+    pinky = _len(lm, 20, 17) / palm
+
+    thumb = _len(lm, 4, 2) / palm
+
+    thumb_up = lm[4].y < lm[2].y - (0.15 * palm)
+
+    return (
+        thumb > 0.7
+        and thumb_up
+        and index < 0.75
+        and middle < 0.75
+        and ring < 0.75
+        and pinky < 0.75
+    )
+
+def is_thumbsdown(lm):
+    palm = _d(lm[0], lm[9]) + 1e-6
+
+    index = _len(lm, 8, 5) / palm
+    middle = _len(lm, 12, 9) / palm
+    ring = _len(lm, 16, 13) / palm
+    pinky = _len(lm, 20, 17) / palm
+
+    thumb = _len(lm, 4, 2) / palm
+
+    thumb_down = lm[4].y > lm[2].y + (0.15 * palm)
+
+    return (
+        thumb > 0.7
+        and thumb_down
+        and index < 0.75
+        and middle < 0.75
+        and ring < 0.75
+        and pinky < 0.75
+    )
+
 
 class PeaceClockwise:
     name = "peace_clockwise"
