@@ -7,6 +7,7 @@ class Controls:
     def __init__(self) -> None:
         self.volume = 50
         self.ac = 0
+        self.temp = 72
         self.last_action = ""
         self.mapping = {
             "peace_clockwise": self.volume_up,
@@ -15,6 +16,8 @@ class Controls:
             "three_turn_left": self.previous_track,
             "three_sideways_up": self.ac_up,
             "three_sideways_down": self.ac_down,
+            "three_clockwise": self.temp_up,
+            "three_counterclockwise": self.temp_down,
         }
 
     def handle(self, gesture: str) -> None:
@@ -44,3 +47,10 @@ class Controls:
         self.ac = max(0, self.ac - 1)
         print(f"AC decreased -> {self.ac}")
  
+    def temp_up(self) -> None:
+        self.temp = min(84, self.temp + 1)
+        print(f"Temp increased -> {self.temp}")
+
+    def temp_down(self) -> None:
+        self.temp = max(60, self.temp - 1)
+        print(f"Temp decreased -> {self.temp}")

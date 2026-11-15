@@ -261,142 +261,215 @@ def _is_upright(lm) -> bool:
     return (lm[0].y - lm[9].y) > abs(lm[9].x - lm[0].x)
 
 
+class ThreeRotation(PeaceRotation):
+   """Same circle tracking as PeaceRotation, but with three fingers up."""
+
+
+   CW = "three_clockwise"
+   CCW = "three_counterclockwise"
+   _min_round = 0.25  # path must be at least this wide as it is long (a skip is a flat line)
+
+
+   def update(self, lm, aspect: float = 16 / 9) -> str | None:
+       # PeaceRotation checks is_peace; three fingers never pass it, so swap the check for this call.
+       global is_peace
+       peace = is_peace
+       is_peace = lambda lm, holding=False: is_three(lm, relaxed=holding)
+       try:
+           result = super().update(lm, aspect)
+       finally:
+           is_peace = peace
+
+       # Only count real circles, not a left/right or up/down line.
+       if self._pts:
+           xs = [x for x, _ in self._pts]
+           ys = [y for _, y in self._pts]
+           w, h = max(xs) - min(xs), max(ys) - min(ys)
+           if min(w, h) < self._min_round * max(w, h, 1e-6):
+               self.offset = 0.0
+               return None
+       return result
+
+
+   def score(self, lm) -> dict[str, float]:
+       """Call after update(). Same as PeaceRotation.score, but scores the three-finger pose."""
+       if not lm:
+           return {self.CW: 0.0, self.CCW: 0.0}
+       pose = three_pose_score(lm, self.holding)
+       return {
+           self.CW: _combine(pose, _clamp(self.offset / STEP)),
+           self.CCW: _combine(pose, _clamp(-self.offset / STEP)),
+       }
+
+
+
+
 class ThreeTurn:
-    """Three fingers up, hand moved left or right and then back to where it started."""
+   """Three fingers up, hand moved left or right and then back to where it started."""
 
-    right = "three_turn_right"
-    left = "three_turn_left"
-    _min_dx = 0.06     # sideways travel, fraction of frame width
-    _home_dx = 0.03    # this close to the start counts as back
-    _window_s = 0.8    # time to make the move
-    _return_s = 1.5    # time to come back after it
 
-    def __init__(self) -> None:
-        self._hist: list[tuple[float, float]] = []
-        self._pending: tuple[str, float, float] | None = None  # (gesture, start x, move time)
+   right = "three_turn_right"
+   left = "three_turn_left"
+   _min_dx = 0.06     # sideways travel, fraction of frame width
+   _home_dx = 0.03    # this close to the start counts as back
+   _max_dy = 0.03     # more vertical drift than this is a circle, not a skip
+   _window_s = 0.8    # time to make the move
+   _return_s = 1.5    # time to come back after it
 
-    def update(self, lm) -> str | None:
-        # Hand must point up (sideways three fingers is the AC gesture).
-        if not lm or not _is_upright(lm) or not is_three(lm, relaxed=bool(self._hist) or self._pending is not None):
-            self._hist.clear()
-            self._pending = None
-            return None
 
-        now = time.time()
-        x = lm[9].x
+   def __init__(self) -> None:
+       self._hist: list[tuple[float, float, float]] = []
+       self._pending: tuple[str, float, float, float] | None = None  # (gesture, start x, start y, move time)
 
-        if self._pending is not None:
-            gesture, start, t = self._pending
-            if abs(x - start) <= self._home_dx:
-                self._pending = None
-                self._hist.clear()
-                return gesture
-            if now - t > self._return_s:
-                self._pending = None
-                self._hist.clear()
-            return None
 
-        self._hist.append((now, x))
-        self._hist = [h for h in self._hist if now - h[0] <= self._window_s]
-        if len(self._hist) < 3:
-            return None
+   def cancel(self) -> None:
+       """Drop any half-finished move (e.g. the hand is drawing a temp circle)."""
+       self._hist.clear()
+       self._pending = None
 
-        start = self._hist[0][1]
-        dx = x - start
-        if abs(dx) >= self._min_dx:
-            # Frame is mirrored, so +x is the user's right.
-            self._pending = (self.right if dx > 0 else self.left, start, now)
-        return None
 
-    def score(self, lm) -> dict[str, float]:
-        """Call after update(). First half = travel out (0-50%), second half = return (50-100%)."""
-        if not lm:
-            return {self.right: 0.0, self.left: 0.0}
-        relaxed = bool(self._hist) or self._pending is not None
-        pose = min(three_pose_score(lm, relaxed), upright_score(lm))
-        x = lm[9].x
-        right = left = 0.0
-        if self._pending is not None:
-            gesture, start, _ = self._pending
-            back = 1 - _clamp((abs(x - start) - self._home_dx) / (self._min_dx - self._home_dx))
-            if gesture == self.right:
-                right = 0.5 + 0.5 * back
-            else:
-                left = 0.5 + 0.5 * back
-        elif self._hist:
-            dx = x - self._hist[0][1]
-            right = 0.5 * _clamp(dx / self._min_dx)
-            left = 0.5 * _clamp(-dx / self._min_dx)
-        return {self.right: _combine(pose, right), self.left: _combine(pose, left)}
+   def update(self, lm) -> str | None:
+       # Hand must point up (sideways three fingers is the AC gesture).
+       if not lm or not _is_upright(lm) or not is_three(lm, relaxed=bool(self._hist) or self._pending is not None):
+           self._hist.clear()
+           self._pending = None
+           return None
+
+
+       now = time.time()
+       x, y = lm[9].x, lm[9].y
+
+
+       if self._pending is not None:
+           gesture, start, start_y, t = self._pending
+           if abs(y - start_y) > self._max_dy or now - t > self._return_s:
+               self._pending = None
+               self._hist.clear()
+           elif abs(x - start) <= self._home_dx:
+               self._pending = None
+               self._hist.clear()
+               return gesture
+           return None
+
+
+       self._hist.append((now, x, y))
+       self._hist = [h for h in self._hist if now - h[0] <= self._window_s]
+       if len(self._hist) < 3:
+           return None
+
+
+       _, start, start_y = self._hist[0]
+       dx = x - start
+       if abs(dx) >= self._min_dx and abs(y - start_y) <= self._max_dy:
+           # Frame is mirrored, so +x is the user's right.
+           self._pending = (self.right if dx > 0 else self.left, start, start_y, now)
+       return None
+
+
+   def score(self, lm) -> dict[str, float]:
+       """Call after update(). First half = travel out (0-50%), second half = return (50-100%)."""
+       if not lm:
+           return {self.right: 0.0, self.left: 0.0}
+       relaxed = bool(self._hist) or self._pending is not None
+       pose = min(three_pose_score(lm, relaxed), upright_score(lm))
+       x = lm[9].x
+       right = left = 0.0
+       if self._pending is not None:
+           gesture, start, _, _ = self._pending
+           back = 1 - _clamp((abs(x - start) - self._home_dx) / (self._min_dx - self._home_dx))
+           if gesture == self.right:
+               right = 0.5 + 0.5 * back
+           else:
+               left = 0.5 + 0.5 * back
+       elif self._hist:
+           dx = x - self._hist[0][1]
+           right = 0.5 * _clamp(dx / self._min_dx)
+           left = 0.5 * _clamp(-dx / self._min_dx)
+       return {self.right: _combine(pose, right), self.left: _combine(pose, left)}
+
 
 class ThreeSideways:
-    """Three fingers pointing sideways, moved up or down and then back to where it started."""
+   """Three fingers pointing sideways, moved up or down and then back to where it started."""
 
-    up = "three_sideways_up"
-    down = "three_sideways_down"
-    _min_dy = 0.04     # vertical travel, fraction of frame height
-    _home_dy = 0.03    # this close to the start counts as back
-    _window_s = 0.8    # time to make the move
-    _return_s = 1.5    # time to come back after it
-    _cooldown_s = 0.5  # minimum time between AC changes
 
-    def __init__(self) -> None:
-        self._hist: list[tuple[float, float]] = []
-        self._pending: tuple[str, float, float] | None = None  # (gesture, start y, move time)
-        self._last_fire = 0.0
+   up = "three_sideways_up"
+   down = "three_sideways_down"
+   _min_dy = 0.04     # vertical travel, fraction of frame height
+   _home_dy = 0.03    # this close to the start counts as back
+   _max_dx = 0.03     # more sideways drift than this is a circle, not an AC change
+   _window_s = 0.8    # time to make the move
+   _return_s = 1.5    # time to come back after it
+   _cooldown_s = 0.5  # minimum time between AC changes
 
-    def update(self, lm) -> str | None:
-        if not lm or not _is_sideways(lm) or not is_three(lm, relaxed=bool(self._hist) or self._pending is not None):
-            self._hist.clear()
-            self._pending = None
-            return None
 
-        now = time.time()
-        y = lm[9].y
+   def __init__(self) -> None:
+       self._hist: list[tuple[float, float, float]] = []
+       self._pending: tuple[str, float, float, float] | None = None  # (gesture, start y, start x, move time)
+       self._last_fire = 0.0
 
-        if self._pending is not None:
-            gesture, start, t = self._pending
-            if abs(y - start) <= self._home_dy:
-                self._pending = None
-                self._hist.clear()
-                if now - self._last_fire >= self._cooldown_s:
-                    self._last_fire = now
-                    return gesture
-                return None
-            if now - t > self._return_s:
-                self._pending = None
-                self._hist.clear()
-            return None
 
-        self._hist.append((now, y))
-        self._hist = [h for h in self._hist if now - h[0] <= self._window_s]
-        if len(self._hist) < 3:
-            return None
+   def cancel(self) -> None:
+       """Drop any half-finished move (e.g. the hand is drawing a temp circle)."""
+       self._hist.clear()
+       self._pending = None
 
-        start = self._hist[0][1]
-        dy = y - start
-        if abs(dy) >= self._min_dy:
-            # Image y points down, so negative dy is moving up.
-            self._pending = (self.up if dy < 0 else self.down, start, now)
-        return None
 
-    def score(self, lm) -> dict[str, float]:
-        """Call after update(). First half = travel out (0-50%), second half = return (50-100%)."""
-        if not lm:
-            return {self.up: 0.0, self.down: 0.0}
-        relaxed = bool(self._hist) or self._pending is not None
-        pose = min(three_pose_score(lm, relaxed), sideways_score(lm))
-        y = lm[9].y
-        up = down = 0.0
-        if self._pending is not None:
-            gesture, start, _ = self._pending
-            back = 1 - _clamp((abs(y - start) - self._home_dy) / (self._min_dy - self._home_dy))
-            if gesture == self.up:
-                up = 0.5 + 0.5 * back
-            else:
-                down = 0.5 + 0.5 * back
-        elif self._hist:
-            dy = y - self._hist[0][1]           # image y points down, so negative = up
-            up = 0.5 * _clamp(-dy / self._min_dy)
-            down = 0.5 * _clamp(dy / self._min_dy)
-        return {self.up: _combine(pose, up), self.down: _combine(pose, down)}
+   def update(self, lm) -> str | None:
+       if not lm or not _is_sideways(lm) or not is_three(lm, relaxed=bool(self._hist) or self._pending is not None):
+           self._hist.clear()
+           self._pending = None
+           return None
+
+
+       now = time.time()
+       x, y = lm[9].x, lm[9].y
+
+
+       if self._pending is not None:
+           gesture, start, start_x, t = self._pending
+           if abs(x - start_x) > self._max_dx or now - t > self._return_s:
+               self._pending = None
+               self._hist.clear()
+           elif abs(y - start) <= self._home_dy:
+               self._pending = None
+               self._hist.clear()
+               if now - self._last_fire >= self._cooldown_s:
+                   self._last_fire = now
+                   return gesture
+           return None
+
+
+       self._hist.append((now, y, x))
+       self._hist = [h for h in self._hist if now - h[0] <= self._window_s]
+       if len(self._hist) < 3:
+           return None
+
+
+       _, start, start_x = self._hist[0]
+       dy = y - start
+       if abs(dy) >= self._min_dy and abs(x - start_x) <= self._max_dx:
+           # Image y points down, so negative dy is moving up.
+           self._pending = (self.up if dy < 0 else self.down, start, start_x, now)
+       return None
+
+
+   def score(self, lm) -> dict[str, float]:
+       """Call after update(). First half = travel out (0-50%), second half = return (50-100%)."""
+       if not lm:
+           return {self.up: 0.0, self.down: 0.0}
+       relaxed = bool(self._hist) or self._pending is not None
+       pose = min(three_pose_score(lm, relaxed), sideways_score(lm))
+       y = lm[9].y
+       up = down = 0.0
+       if self._pending is not None:
+           gesture, start, _, _ = self._pending
+           back = 1 - _clamp((abs(y - start) - self._home_dy) / (self._min_dy - self._home_dy))
+           if gesture == self.up:
+               up = 0.5 + 0.5 * back
+           else:
+               down = 0.5 + 0.5 * back
+       elif self._hist:
+           dy = y - self._hist[0][1]           # image y points down, so negative = up
+           up = 0.5 * _clamp(-dy / self._min_dy)
+           down = 0.5 * _clamp(dy / self._min_dy)
+       return {self.up: _combine(pose, up), self.down: _combine(pose, down)}
