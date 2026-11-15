@@ -116,9 +116,6 @@ def main() -> None:
             panel.update(all_scores((tracker, track_turn, ac_move, temp_rot, thumbs_call, play_pause), lm),
                 fired=[g for g in (gesture, track, ac, temp, call, play) if g])
 
-
-            cv2.putText(frame, "Playing" if controls.playing else "Paused", (16, 276),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             progress = min(1.0, max(abs(tracker.offset), abs(temp_rot.offset)) / math.radians(30))
             hud.draw(frame, result.hand_landmarks, lm, controls, progress)
             panel.draw(frame)

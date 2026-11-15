@@ -16,16 +16,16 @@ from controls import GESTURES
 from hud import CYAN, CYAN_DIM, WHITE, chamfer, panel, text_mid
 
 AA = cv2.LINE_AA
-MARGIN = 40                # distance of the buttons from the screen edge
+MARGIN = 72                # distance of the buttons from the screen edge
 BTN_R = 30                 # button radius
-BTN_GAP = 14               # space between the two buttons
+BTN_GAP = 32               # space between the two buttons
 POP_W = 660
 ROW_TOP = 84               # y offset of the first control row from the popup top
 ROW_H = 48
 ITEM_H = 38                # height of one entry in an open dropdown list
 DD_X = 260                 # dropdown box starts this far from the popup's left edge
 DD_PAD = 30                # dropdown box ends this far from the popup's right edge
-DEV_H = 300                # dev tools popup height
+DEV_H = 360                # dev tools popup height
 TITLES = {"settings": "Settings", "dev": "Dev Tools"}
 
 
@@ -201,6 +201,46 @@ class SettingsUI:
                 cv2.rectangle(frame, (lx1 + 2, top + 1), (lx2 - 2, top + d.item_h - 1), (95, 70, 20), -1)
             text_mid(frame, label, lx1 + d.s(14), top + d.item_h // 2, d.s(23), CYAN if g == current else WHITE)
 
+    def _draw_bars(self, frame, x1, y1, x2, y2, d) -> None:
+        """Render the confidence bars off-screen, enlarge them, and center them in the dev popup.
+
+        (Done from the outside so confidence.py doesn't have to change. If you later give
+        ConfidencePanel its own scale/size, replace this with a direct draw_at call.)
+        """
+        area = frame[y1 + d.s(70):y2 - d.s(10), x1 + d.s(10):x2 - d.s(10)]
+        if area.size == 0:
+            return
+        bg = tuple(int(v) for v in np.median(area.reshape(-1, 3), axis=0))     # popup's own color
+        canvas = np.full((300, 520, 3), bg, np.uint8)
+        self.panel.draw_at(canvas, 20, 20)
+        diff = np.abs(canvas.astype(np.int16) - np.array(bg, np.int16)).max(axis=2)
+        ys, xs = np.nonzero(diff > 6)
+        if len(xs) == 0:
+            return
+        pad = 10
+        bx0, bx1 = max(0, xs.min() - pad), min(canvas.shape[1], xs.max() + 1 + pad)
+        by0, by1 = max(0, ys.min() - pad), min(canvas.shape[0], ys.max() + 1 + pad)
+        crop = canvas[by0:by1, bx0:bx1]
+        avail_w, avail_h = (x2 - x1) - d.s(60), (y2 - y1) - d.s(70) - d.s(24)
+        sc = min(d.pw * 0.66 / max(1, crop.shape[1]), avail_h / max(1, crop.shape[0]), 2.6)
+        sc = max(1.0, sc)
+        up = cv2.resize(crop, None, fx=sc, fy=sc, interpolation=cv2.INTER_CUBIC)
+        uh, uw = up.shape[:2]
+        cx = (x1 + x2) // 2
+        cy = (y1 + d.s(70) + y2) // 2                              # centered below the title line
+        px, py = cx - uw // 2, cy - uh // 2
+        fp = int(pad * sc)                                         # feather the pasted edge
+        wgt = np.zeros((uh, uw), np.float32)
+        wgt[fp:uh - fp, fp:uw - fp] = 1.0
+        wgt = cv2.GaussianBlur(wgt, (0, 0), max(1.0, fp / 2.5))[..., None]
+        H, W = frame.shape[:2]
+        x0, y0, xe, ye = max(0, px), max(0, py), min(W, px + uw), min(H, py + uh)
+        if xe <= x0 or ye <= y0:
+            return
+        roi = frame[y0:ye, x0:xe]
+        sub, wsub = up[y0 - py:ye - py, x0 - px:xe - px], wgt[y0 - py:ye - py, x0 - px:xe - px]
+        roi[:] = (roi * (1 - wsub) + sub * wsub).astype(np.uint8)
+
     def draw(self, frame) -> None:
         h, w = frame.shape[:2]
         self._size = (w, h)
@@ -227,7 +267,7 @@ class SettingsUI:
         cv2.line(frame, (cx - e, cy + e), (cx + e, cy - e), CYAN, 3, AA)
 
         if self.active == "dev":
-            self.panel.draw_at(frame, x1 + d.s(32), y1 + d.s(96))
+            self._draw_bars(frame, x1, y1, x2, y2, d)
 
         if self.active == "settings":
             self._draw_rows(frame, w, h)

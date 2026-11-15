@@ -285,8 +285,8 @@ def _toast_icon(title: str) -> str:
 
 
 # ---------- the HUD ----------
-MARGIN = 40                  # distance of the cards from the screen edge (at 1080p; scales with frame height)
-FRAME_INSET = 14             # distance of the screen border lines from the edge
+MARGIN = 72                  # distance of the cards from the screen edge (at 1080p; scales with frame height)
+FRAME_INSET = 32             # distance of the screen border lines from the edge
 
 
 class Hud:
@@ -344,7 +344,7 @@ class Hud:
         bw = self.S(380)                                                        # top line leaving the brand tab
         self._gline(L, (m + bw, m), (int(w * 0.58), m), mid, dark, 2)
 
-        c = self.S(70)                                                          # bottom corner brackets
+        c = self.S(56)                                                          # bottom corner brackets
         for sx in (1, -1):
             cx = f if sx == 1 else w - f
             cv2.line(L, (cx, h - f - c), (cx + sx * c, h - f), strong, 2, AA)    # slanted corner
@@ -362,7 +362,7 @@ class Hud:
         # vignette (faint) times a dark rounded-corner mask
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
         r = np.sqrt(((xs - w / 2) / (w / 2)) ** 2 + ((ys - h / 2) / (h / 2)) ** 2) / math.sqrt(2)
-        vig = 1.0 - 0.38 * np.clip((r - 0.40) / 0.60, 0, 1) ** 2
+        vig = 1.0 - 0.62 * np.clip((r - 0.30) / 0.70, 0, 1) ** 1.7
         inside = np.zeros((h, w), np.uint8)
         e = self.S(6)
         cv2.fillPoly(inside, [rrect(e, e, w - 2 * e, h - 2 * e, self.S(44))], 255)
@@ -393,7 +393,7 @@ class Hud:
             self.ring_glow.begin(frame)
             self._rings(w, h, lm, now, progress)
             inv = 255 - self._hand_mask(w, h, hands)
-            self.ring_glow.end(frame, 1.0, cv2.merge([inv, inv, inv]))
+            self.ring_glow.end(frame, 0.75, cv2.merge([inv, inv, inv]))
         else:
             self._ring_c = None
 
@@ -452,12 +452,12 @@ class Hud:
         fracs = (0.20, 0.27, 0.35, 0.44, 0.54)
         radii = [max(self.S(60), int(L * f)) for f in fracs]
         for i, r in enumerate(radii):
-            cv2.circle(layer, (cx, cy), r, fade(CYAN, 0.18), 1, AA)                    # faint full ring
+            cv2.circle(layer, (cx, cy), r, fade(CYAN, 0.12), 1, AA)                    # faint full ring
             start = (now * 28 * (1 if i % 2 == 0 else -1) + i * 63) % 360
             span = 70 + 18 * (i % 3)
             t = 3 if i in (1, 4) else 2
             for off in (0, 180):
-                cv2.ellipse(layer, (cx, cy), (r, r), 0, start + off, start + off + span, fade(CYAN, 0.42), t, AA)
+                cv2.ellipse(layer, (cx, cy), (r, r), 0, start + off, start + off + span, fade(CYAN, 0.30), t, AA)
         r = radii[3]                                                                   # tick marks on one ring
         rot = now * 12
         for j in range(72):
@@ -465,14 +465,14 @@ class Hud:
             ln = 9 if j % 6 == 0 else 4
             p0 = (int(cx + (r + 8) * math.cos(a)), int(cy + (r + 8) * math.sin(a)))
             p1 = (int(cx + (r + 8 + ln) * math.cos(a)), int(cy + (r + 8 + ln) * math.sin(a)))
-            cv2.line(layer, p0, p1, fade(CYAN, 0.3), 1, AA)
+            cv2.line(layer, p0, p1, fade(CYAN, 0.2), 1, AA)
         if progress > 0.02:                                    # fills as a circle gesture is swept
             R = radii[-1] + self.S(18)
-            cv2.ellipse(layer, (cx, cy), (R, R), -90, 0, 360 * min(progress, 1.0), fade(WHITE, 0.65), 3, AA)
+            cv2.ellipse(layer, (cx, cy), (R, R), -90, 0, 360 * min(progress, 1.0), fade(WHITE, 0.5), 3, AA)
         age = now - self._fired_at
         if age < 0.6:                                          # pulse when something fires
             pr = int(radii[0] + ease_out(age / 0.6) * (radii[-1] - radii[0] + self.S(60)))
-            cv2.circle(layer, (cx, cy), pr, fade(CYAN, 0.8 * (1 - age / 0.6)), 3, AA)
+            cv2.circle(layer, (cx, cy), pr, fade(CYAN, 0.6 * (1 - age / 0.6)), 3, AA)
 
     def _faded(self, frame, rect, a: float, draw) -> None:
         """Run draw(), then blend only the area around rect back toward the old pixels by (1 - a)."""
@@ -496,7 +496,7 @@ class Hud:
         panel(frame, tab, alpha=0.45)
         isz = self.S(62)
         icon(frame, "car", m + self.S(26), m + (bh - isz) // 2, isz)
-        text_mid(frame, "DRIVE.AI", m + self.S(108), m + bh // 2, self.S(36))
+        text_mid(frame, "DriveSafe", m + self.S(108), m + bh // 2, self.S(36))
 
     def _status(self, frame, w, tracking: bool, now) -> None:
         pulse = 0.6 + 0.4 * math.sin(now * 4)
