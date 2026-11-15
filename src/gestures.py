@@ -473,3 +473,56 @@ class ThreeSideways:
            up = 0.5 * _clamp(-dy / self._min_dy)
            down = 0.5 * _clamp(dy / self._min_dy)
        return {self.up: _combine(pose, up), self.down: _combine(pose, down)}
+
+class ThumbsCall:
+   """Thumbs up = accept call, thumbs down = decline call.
+
+   Pose must be held briefly, fires once, and must be released before it can fire again.
+   """
+
+   ACCEPT = "thumbs_up"
+   DECLINE = "thumbs_down"
+   _hold_s = 0.4      # how long the pose must be held
+
+   def __init__(self) -> None:
+       self._kind: str | None = None
+       self._start = 0.0
+       self._fired = False
+       self._miss = 0
+
+   def _current(self, lm) -> str | None:
+       if not lm:
+           return None
+       if is_thumbsup(lm):
+           return self.ACCEPT
+       if is_thumbsdown(lm):
+           return self.DECLINE
+       return None
+
+   def update(self, lm) -> str | None:
+       kind = self._current(lm)
+       now = time.monotonic()
+       if kind is None:
+           self._miss += 1
+           if self._miss > MISS_LIMIT:      # pose gone: re-arm
+               self._kind = None
+               self._fired = False
+           return None
+       self._miss = 0
+       if kind != self._kind:               # new pose (or switched up <-> down)
+           self._kind = kind
+           self._start = now
+           self._fired = False
+           return None
+       if not self._fired and now - self._start >= self._hold_s:
+           self._fired = True
+           return kind
+       return None
+
+   def score(self, lm) -> dict[str, float]:
+       """Call after update(). Fills as you hold the pose, full once fired."""
+       out = {self.ACCEPT: 0.0, self.DECLINE: 0.0}
+       kind = self._current(lm)
+       if kind is not None and kind == self._kind:
+           out[kind] = 1.0 if self._fired else _clamp((time.monotonic() - self._start) / self._hold_s)
+       return out

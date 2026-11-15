@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
-from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation, ThreeSideways, ThreeTurn, is_three
+from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation, ThreeSideways, ThreeTurn, is_three, ThumbsCall
 from confidence import ConfidencePanel, all_scores
 from settings_ui import SettingsUI  # ADDED
 
@@ -58,6 +58,7 @@ def main() -> None:
     track_turn = ThreeTurn()
     ac_move = ThreeSideways()
     temp_rot = ThreeRotation()
+    thumbs_call = ThumbsCall()
     last_temp = -1e9  # when temp last changed (skip / AC are blocked right after)
     controls = Controls()
     panel = ConfidencePanel()
@@ -101,10 +102,12 @@ def main() -> None:
             elif track or ac:
                 temp_rot._reset()  # that was a skip / AC move, not a circle
                 controls.handle(track or ac)
-
+            call = thumbs_call.update(lm)
+            if call:
+                controls.handle(call)
             # Scores are read after the detectors have updated this frame.
-            panel.update(all_scores((tracker, track_turn, ac_move, temp_rot), lm),
-                         fired=[g for g in (gesture, track, ac, temp) if g])
+            panel.update(all_scores((tracker, track_turn, ac_move, temp_rot, thumbs_call), lm),
+                fired=[g for g in (gesture, track, ac, temp, call) if g])
 
             for landmarks in result.hand_landmarks:
                 draw_hand(frame, landmarks)
