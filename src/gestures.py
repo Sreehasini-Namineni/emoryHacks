@@ -93,15 +93,15 @@ def peace_pose_score(lm, holding: bool) -> float:
 
 
 def three_pose_score(lm, relaxed: bool) -> float:
-    index, middle, ring, pinky = _finger_ratios(lm)
-    ext, curl, sep = (
-        (THREE_EXT_HOLD, THREE_CURL_HOLD, 1.0) if relaxed else (THREE_EXT, THREE_CURL, THREE_SEP)
-    )
-    return min(
-        _at_least(min(index, middle, ring), ext),
-        _at_most(pinky, curl),
-        _at_least(ring / (pinky * sep + 1e-6), 1.0),
-    )
+   index, middle, ring, _ = _finger_ratios(lm)
+   ext = THREE_EXT_HOLD if relaxed else THREE_EXT
+   bent = 0.88 if relaxed else 0.82            # same pinky limits as is_three()
+   pinky_straight = _straightness(lm, (17, 18, 19, 20))
+   return min(
+       _at_least(min(index, middle, ring), ext),
+       _clamp((1.0 - pinky_straight) / (1.0 - bent)),   # 1.0 once bent enough, 0 when straight
+   )
+
 
 
 def upright_score(lm) -> float:
@@ -250,15 +250,22 @@ class PeaceRotation:
         }
 
 def is_three(lm, relaxed: bool = False) -> bool:
-    """Index+middle+ring clearly longer than pinky. Thumb is ignored (too noisy)."""
-    palm = _d(lm[0], lm[9]) + 1e-6
-    index = _len(lm, 8, 5) / palm
-    middle = _len(lm, 12, 9) / palm
-    ring = _len(lm, 16, 13) / palm
-    pinky = _len(lm, 20, 17) / palm
-    if relaxed:
-        return index > 0.65 and middle > 0.65 and ring > 0.65 and ring > pinky and pinky < 0.9
-    return index > 0.8 and middle > 0.8 and ring > 0.8 and pinky < 0.72 and ring > pinky * 1.15
+   """Index+middle+ring extended, pinky bent. Thumb is ignored (too noisy).
+
+
+   The pinky is judged by how bent it is, not its length: a straight pinky is naturally
+   short, so a length check made an open palm look like three fingers.
+   """
+   palm = _d(lm[0], lm[9]) + 1e-6
+   index = _len(lm, 8, 5) / palm
+   middle = _len(lm, 12, 9) / palm
+   ring = _len(lm, 16, 13) / palm
+   pinky_straight = _straightness(lm, (17, 18, 19, 20))   # ~1.0 straight, lower when bent
+   if relaxed:
+       return index > 0.65 and middle > 0.65 and ring > 0.65 and pinky_straight < 0.88
+   return index > 0.8 and middle > 0.8 and ring > 0.8 and pinky_straight < 0.82
+
+
 
 
 def _is_sideways(lm) -> bool:
