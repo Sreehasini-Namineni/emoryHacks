@@ -17,7 +17,7 @@ TRACK_POINT = 0              # landmark whose path we follow (0 = wrist)
 WINDOW = 30                  # recent positions used to estimate the circle center
 MIN_POINTS = 12              # positions needed before measuring
 MIN_RADIUS_PALM = 0.30       # circle radius must exceed this fraction of palm length
-STEP = math.radians(30)      # sweep around the circle needed per action
+STEP = math.radians(360)      # sweep around the circle needed per action
 MISS_LIMIT = 8               # frames without the pose before reset
 
 def _d(a, b) -> float:
@@ -526,3 +526,86 @@ class ThumbsCall:
        if kind is not None and kind == self._kind:
            out[kind] = 1.0 if self._fired else _clamp((time.monotonic() - self._start) / self._hold_s)
        return out
+
+
+# ---------------------------------------------------------------------------
+# Pause / play: open palm, then close into a fist.
+# ---------------------------------------------------------------------------
+
+# Each finger as (knuckle, middle joint, top joint, tip).
+FINGER_JOINTS = ((5, 6, 7, 8), (9, 10, 11, 12), (13, 14, 15, 16), (17, 18, 19, 20))
+OPEN_STRAIGHT = 0.85    # every finger at least this straight -> open palm
+FIST_STRAIGHT = 0.82    # every finger at most this straight -> fist (tight ~0.45, loose ~0.75)
+FRAME_ASPECT = 16 / 9   # webcam width / height; x is scaled by this so lengths match in every direction
+
+
+def _straightness(lm, joints) -> float:
+    """Knuckle-to-tip distance / length along the finger: ~1.0 straight, lower when curled.
+    Works the same for short fingers (pinky) and for any hand direction."""
+    def d(a, b):
+        return math.sqrt(((a.x - b.x) * FRAME_ASPECT) ** 2 + (a.y - b.y) ** 2 + ((a.z - b.z) * FRAME_ASPECT) ** 2)
+    mcp, pip, dip, tip = (lm[j] for j in joints)
+    path = d(mcp, pip) + d(pip, dip) + d(dip, tip)
+    return d(mcp, tip) / (path + 1e-6)
+
+
+def is_open_palm(lm) -> bool:
+    """All four fingers straight (thumb ignored)."""
+    return min(_straightness(lm, j) for j in FINGER_JOINTS) > OPEN_STRAIGHT
+
+
+def is_fist(lm) -> bool:
+    """All four fingers curled. A thumbs up / down is left to ThumbsCall (accept / decline call)."""
+    return (max(_straightness(lm, j) for j in FINGER_JOINTS) < FIST_STRAIGHT
+            and not is_thumbsup(lm) and not is_thumbsdown(lm))
+
+
+class PalmToFist:
+    """Open palm, then close into a fist -> toggle play/pause."""
+
+    name = "palm_to_fist"
+    _arm_s = 1.0       # fist must come within this long after the open palm
+    _hold_frames = 3   # fist frames in a row needed (ignores one-frame flickers)
+
+    def __init__(self) -> None:
+        self._palm_t: float | None = None   # last time an open palm was seen
+        self._fist_frames = 0
+        self._fired = False                 # True after toggling, until the palm opens again
+
+    def _armed(self, now: float) -> bool:
+        return self._palm_t is not None and now - self._palm_t <= self._arm_s
+
+    def update(self, lm) -> str | None:
+        now = time.time()
+        if not lm:
+            self._fist_frames = 0
+            return None
+
+        if is_open_palm(lm):
+            self._palm_t = now
+            self._fist_frames = 0
+            self._fired = False
+            return None
+
+        if is_fist(lm):
+            self._fist_frames += 1
+            if self._armed(now) and not self._fired and self._fist_frames >= self._hold_frames:
+                self._fired = True
+                self._palm_t = None
+                return self.name
+            return None
+
+        self._fist_frames = 0
+        return None
+
+    def score(self, lm) -> dict[str, float]:
+        """Call after update(). Open palm = halfway, closing to a fist fills the rest."""
+        if not lm or self._fired:
+            return {self.name: 0.0}
+        straight = [_straightness(lm, j) for j in FINGER_JOINTS]
+        if self._armed(time.time()):
+            fist = _at_most(max(straight), FIST_STRAIGHT)
+            progress = 0.5 + 0.5 * fist * min(1.0, self._fist_frames / self._hold_frames)
+        else:
+            progress = 0.5 * _at_least(min(straight), OPEN_STRAIGHT)
+        return {self.name: _clamp(progress)}

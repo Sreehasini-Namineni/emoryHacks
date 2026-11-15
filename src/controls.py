@@ -8,6 +8,7 @@ class Controls:
         self.volume = 50
         self.ac = 0
         self.temp = 72
+        self.playing = True
         self.last_action = ""
         self.last_action_time = -1e9
         self.mapping = {
@@ -21,6 +22,7 @@ class Controls:
             "three_counterclockwise": self.temp_down,
             "thumbs_up": self.accept_call,
             "thumbs_down": self.decline_call,
+            "palm_to_fist": self.toggle_play,
         }
 
     def handle(self, gesture: str) -> None:
@@ -69,3 +71,7 @@ class Controls:
 
     def decline_call(self) -> None:
         self._say("Call DECLINED")
+
+    def toggle_play(self) -> None:
+        self.playing = not self.playing
+        self._say("Play >" if self.playing else "Pause ||")

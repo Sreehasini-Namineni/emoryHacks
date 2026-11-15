@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
-from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation, ThreeSideways, ThreeTurn, is_three, ThumbsCall
+from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation, ThreeSideways, ThreeTurn, is_three, ThumbsCall, PalmToFist
 from confidence import ConfidencePanel, all_scores
 from settings_ui import SettingsUI  # ADDED
 
@@ -59,6 +59,7 @@ def main() -> None:
     ac_move = ThreeSideways()
     temp_rot = ThreeRotation()
     thumbs_call = ThumbsCall()
+    play_pause = PalmToFist()
     last_temp = -1e9  # when temp last changed (skip / AC are blocked right after)
     controls = Controls()
     panel = ConfidencePanel()
@@ -105,9 +106,12 @@ def main() -> None:
             call = thumbs_call.update(lm)
             if call:
                 controls.handle(call)
+            play = play_pause.update(lm)
+            if play:
+                controls.handle(play)
             # Scores are read after the detectors have updated this frame.
-            panel.update(all_scores((tracker, track_turn, ac_move, temp_rot, thumbs_call), lm),
-                fired=[g for g in (gesture, track, ac, temp, call) if g])
+            panel.update(all_scores((tracker, track_turn, ac_move, temp_rot, thumbs_call, play_pause), lm),
+                fired=[g for g in (gesture, track, ac, temp, call, play) if g])
 
             for landmarks in result.hand_landmarks:
                 draw_hand(frame, landmarks)
@@ -137,6 +141,8 @@ def main() -> None:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
             cv2.putText(frame, f"AC {controls.ac}", (16, 236), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             cv2.putText(frame, f"Temp {controls.temp}F", (16, 196), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            cv2.putText(frame, "Playing" if controls.playing else "Paused", (16, 276),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             panel.draw(frame)
             settings.draw(frame)  # ADDED
             cv2.imshow("Step 3 — Hands", frame)
