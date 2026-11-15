@@ -16,6 +16,7 @@ from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
 from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeSideways, ThreeTurn, is_three
+from confidence import ConfidencePanel, all_scores  # ADDED
 
 MODEL_PATH = Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
 
@@ -56,6 +57,7 @@ def main() -> None:
     track_turn = ThreeTurn()
     ac_move = ThreeSideways()
     controls = Controls()
+    panel = ConfidencePanel()  # ADDED
     last_ts = 0
 
     with HandLandmarker.create_from_options(options) as landmarker:
@@ -84,6 +86,10 @@ def main() -> None:
             if ac:
                 controls.handle(ac)
 
+            # ADDED: scores are read after the detectors have updated this frame.
+            panel.update(all_scores((tracker, track_turn, ac_move), lm),
+                         fired=[g for g in (gesture, track, ac) if g])
+
             for landmarks in result.hand_landmarks:
                 draw_hand(frame, landmarks)
 
@@ -110,6 +116,7 @@ def main() -> None:
             cv2.putText(frame, f"Rot {math.degrees(tracker.offset):+.0f} deg", (16, 156),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
             cv2.putText(frame, f"AC {controls.ac}", (16, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            panel.draw(frame)  # ADDED
             cv2.imshow("Step 3 — Hands", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break

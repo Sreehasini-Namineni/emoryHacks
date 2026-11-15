@@ -38,6 +38,84 @@ def _wrap(a: float) -> float:
     return a
 
 
+# ---------------------------------------------------------------------------
+# Confidence scoring (added). Read-only: nothing here changes detector state or
+# what update() returns. Score 1.0 = at the trigger point, 0.0 = nowhere close.
+# These are heuristic match scores, not probabilities.
+# ---------------------------------------------------------------------------
+
+MOTION_FLOOR = 0.25          # a held pose with no motion yet shows this fraction of its pose score
+
+# Same numbers as the literals inside is_three().
+THREE_EXT, THREE_CURL, THREE_SEP = 0.8, 0.72, 1.15
+THREE_EXT_HOLD, THREE_CURL_HOLD = 0.65, 0.9
+
+
+def _clamp(v: float) -> float:
+    return max(0.0, min(1.0, v))
+
+
+def _at_least(value: float, thr: float) -> float:
+    """1.0 once value >= thr, falling to 0 as value -> 0."""
+    return _clamp(value / thr)
+
+
+def _at_most(value: float, thr: float) -> float:
+    """1.0 while value <= thr, falling to 0 at 2 * thr."""
+    return _clamp(2 - value / thr)
+
+
+def _finger_ratios(lm):
+    palm = _d(lm[0], lm[9]) + 1e-6
+    return (
+        _ratio(lm, 8, 5, palm),
+        _ratio(lm, 12, 9, palm),
+        _ratio(lm, 16, 13, palm),
+        _ratio(lm, 20, 17, palm),
+    )
+
+
+def peace_pose_score(lm, holding: bool) -> float:
+    """Weakest condition wins, so a low score points at what is holding it back."""
+    index, middle, ring, pinky = _finger_ratios(lm)
+    up, down = min(index, middle), max(ring, pinky)
+    if holding:
+        return min(
+            _at_least(up, EXTENDED_MIN_HOLD),
+            _at_most(down, CURLED_MAX_HOLD),
+            _at_least(up / (down + 1e-6), 1.0),
+        )
+    return min(
+        _at_least(up, EXTENDED_MIN),
+        _at_most(down, CURLED_MAX),
+        _at_least(up / (down * SEPARATION + 1e-6), 1.0),
+    )
+
+
+def three_pose_score(lm, relaxed: bool) -> float:
+    index, middle, ring, pinky = _finger_ratios(lm)
+    ext, curl, sep = (
+        (THREE_EXT_HOLD, THREE_CURL_HOLD, 1.0) if relaxed else (THREE_EXT, THREE_CURL, THREE_SEP)
+    )
+    return min(
+        _at_least(min(index, middle, ring), ext),
+        _at_most(pinky, curl),
+        _at_least(ring / (pinky * sep + 1e-6), 1.0),
+    )
+
+
+def upright_score(lm) -> float:
+    return _clamp((lm[0].y - lm[9].y) / (abs(lm[9].x - lm[0].x) + 1e-6))
+
+
+def sideways_score(lm) -> float:
+    return _clamp(abs(lm[9].x - lm[0].x) / (abs(lm[9].y - lm[0].y) + 1e-6))
+
+
+def _combine(pose: float, progress: float) -> float:
+    return pose * (MOTION_FLOOR + (1 - MOTION_FLOOR) * progress)
+
+
 def is_peace(lm, holding: bool = False) -> bool:
     """Index+middle extended, ring+pinky curled, all as ratios of palm length."""
     palm = _d(lm[0], lm[9]) + 1e-6
@@ -151,6 +229,16 @@ class PeaceRotation:
             return self.CCW
         return None
 
+    def score(self, lm) -> dict[str, float]:
+        """Call after update(). Pose match x sweep progress in each direction."""
+        if not lm:
+            return {self.CW: 0.0, self.CCW: 0.0}
+        pose = peace_pose_score(lm, self.holding)
+        return {
+            self.CW: _combine(pose, _clamp(self.offset / STEP)),
+            self.CCW: _combine(pose, _clamp(-self.offset / STEP)),
+        }
+
 def is_three(lm, relaxed: bool = False) -> bool:
     """Index+middle+ring clearly longer than pinky. Thumb is ignored (too noisy)."""
     palm = _d(lm[0], lm[9]) + 1e-6
@@ -220,6 +308,27 @@ class ThreeTurn:
             self._pending = (self.right if dx > 0 else self.left, start, now)
         return None
 
+    def score(self, lm) -> dict[str, float]:
+        """Call after update(). First half = travel out (0-50%), second half = return (50-100%)."""
+        if not lm:
+            return {self.right: 0.0, self.left: 0.0}
+        relaxed = bool(self._hist) or self._pending is not None
+        pose = min(three_pose_score(lm, relaxed), upright_score(lm))
+        x = lm[9].x
+        right = left = 0.0
+        if self._pending is not None:
+            gesture, start, _ = self._pending
+            back = 1 - _clamp((abs(x - start) - self._home_dx) / (self._min_dx - self._home_dx))
+            if gesture == self.right:
+                right = 0.5 + 0.5 * back
+            else:
+                left = 0.5 + 0.5 * back
+        elif self._hist:
+            dx = x - self._hist[0][1]
+            right = 0.5 * _clamp(dx / self._min_dx)
+            left = 0.5 * _clamp(-dx / self._min_dx)
+        return {self.right: _combine(pose, right), self.left: _combine(pose, left)}
+
 class ThreeSideways:
     """Three fingers pointing sideways, moved up or down and then back to where it started."""
 
@@ -270,3 +379,24 @@ class ThreeSideways:
             # Image y points down, so negative dy is moving up.
             self._pending = (self.up if dy < 0 else self.down, start, now)
         return None
+
+    def score(self, lm) -> dict[str, float]:
+        """Call after update(). First half = travel out (0-50%), second half = return (50-100%)."""
+        if not lm:
+            return {self.up: 0.0, self.down: 0.0}
+        relaxed = bool(self._hist) or self._pending is not None
+        pose = min(three_pose_score(lm, relaxed), sideways_score(lm))
+        y = lm[9].y
+        up = down = 0.0
+        if self._pending is not None:
+            gesture, start, _ = self._pending
+            back = 1 - _clamp((abs(y - start) - self._home_dy) / (self._min_dy - self._home_dy))
+            if gesture == self.up:
+                up = 0.5 + 0.5 * back
+            else:
+                down = 0.5 + 0.5 * back
+        elif self._hist:
+            dy = y - self._hist[0][1]           # image y points down, so negative = up
+            up = 0.5 * _clamp(-dy / self._min_dy)
+            down = 0.5 * _clamp(dy / self._min_dy)
+        return {self.up: _combine(pose, up), self.down: _combine(pose, down)}
