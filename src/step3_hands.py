@@ -16,7 +16,8 @@ from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
 from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation, ThreeSideways, ThreeTurn, is_three
-from confidence import ConfidencePanel, all_scores  # ADDED
+from confidence import ConfidencePanel, all_scores
+from settings_ui import SettingsUI  # ADDED
 
 MODEL_PATH = Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
 
@@ -59,7 +60,10 @@ def main() -> None:
     temp_rot = ThreeRotation()
     last_temp = -1e9  # when temp last changed (skip / AC are blocked right after)
     controls = Controls()
-    panel = ConfidencePanel()  # ADDED
+    panel = ConfidencePanel()
+    settings = SettingsUI(panel)  # ADDED
+    cv2.namedWindow("Step 3 — Hands")  # ADDED
+    cv2.setMouseCallback("Step 3 — Hands", settings.on_mouse)  # ADDED
     last_ts = 0
 
     with HandLandmarker.create_from_options(options) as landmarker:
@@ -98,7 +102,7 @@ def main() -> None:
                 temp_rot._reset()  # that was a skip / AC move, not a circle
                 controls.handle(track or ac)
 
-            # ADDED: scores are read after the detectors have updated this frame.
+            # Scores are read after the detectors have updated this frame.
             panel.update(all_scores((tracker, track_turn, ac_move, temp_rot), lm),
                          fired=[g for g in (gesture, track, ac, temp) if g])
 
@@ -129,7 +133,8 @@ def main() -> None:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
             cv2.putText(frame, f"AC {controls.ac}", (16, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             cv2.putText(frame, f"Temp {controls.temp}F", (16, 196), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-            panel.draw(frame)  # ADDED
+            panel.draw(frame)
+            settings.draw(frame)  # ADDED
             cv2.imshow("Step 3 — Hands", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
