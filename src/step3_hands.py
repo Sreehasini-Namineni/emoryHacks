@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
-from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation, ThreeSideways, ThreeTurn, is_three, ThumbsCall, PalmToFist
+from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation
+from gestures import ThreeSideways, ThreeTurn, is_three, ThumbsCall, is_fist, PalmToFist
 from confidence import ConfidencePanel, all_scores
 from settings_ui import SettingsUI  # ADDED
 
@@ -63,7 +64,7 @@ def main() -> None:
     last_temp = -1e9  # when temp last changed (skip / AC are blocked right after)
     controls = Controls()
     panel = ConfidencePanel()
-    settings = SettingsUI(panel)  # ADDED
+    settings = SettingsUI(panel, controls)  # ADDED
     cv2.namedWindow("Step 3 — Hands")  # ADDED
     cv2.setMouseCallback("Step 3 — Hands", settings.on_mouse)  # ADDED
     last_ts = 0
@@ -120,6 +121,7 @@ def main() -> None:
                 status = ("PEACE" if tracker.holding 
                           else "THUMBS UP" if is_thumbsup(lm)
                           else "THUMBS DOWN" if is_thumbsdown(lm)
+                          else "FIST" if is_fist(lm)
                           else "THREECE" if is_three(lm)
                           else f"HAND DETECTED ({n_hands})")
 
