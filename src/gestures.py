@@ -168,6 +168,13 @@ def is_thumbsdown(lm):
         and pinky < 0.75
     )
 
+def is_fist(lm):
+    """All four fingers curled and the thumb tucked in (not sticking out like thumbs up/down)."""
+    palm = _d(lm[0], lm[9]) + 1e-6
+    fingers = (_len(lm, 8, 5), _len(lm, 12, 9), _len(lm, 16, 13), _len(lm, 20, 17))
+    thumb = _len(lm, 4, 2) / palm
+    return all(f / palm < 0.75 for f in fingers) and thumb <= 0.7
+
 class PeaceRotation:
     """Peace sign held while the wrist travels in a circle.
 
@@ -187,9 +194,12 @@ class PeaceRotation:
         self.holding = False
         self.offset = 0.0
         self._pts.clear()
-
+    
+    def _is_pose(self, lm) -> bool:
+        return is_peace(lm, holding=self.holding)
+    
     def update(self, lm, aspect: float = 16 / 9) -> str | None:
-        pose = bool(lm) and is_peace(lm, holding=self.holding)
+        pose = bool(lm) and self._is_pose(lm)
         if not pose:
             self._miss += 1
             if self._miss > MISS_LIMIT:
@@ -270,15 +280,12 @@ class ThreeRotation(PeaceRotation):
    _min_round = 0.25  # path must be at least this wide as it is long (a skip is a flat line)
 
 
+   def _is_pose(self, lm) -> bool:
+       return is_three(lm, relaxed=self.holding)
+
+
    def update(self, lm, aspect: float = 16 / 9) -> str | None:
-       # PeaceRotation checks is_peace; three fingers never pass it, so swap the check for this call.
-       global is_peace
-       peace = is_peace
-       is_peace = lambda lm, holding=False: is_three(lm, relaxed=holding)
-       try:
-           result = super().update(lm, aspect)
-       finally:
-           is_peace = peace
+       result = super().update(lm, aspect)
 
        # Only count real circles, not a left/right or up/down line.
        if self._pts:
@@ -482,6 +489,7 @@ class ThumbsCall:
 
    ACCEPT = "thumbs_up"
    DECLINE = "thumbs_down"
+   FIST = "closed_fist"
    _hold_s = 0.4      # how long the pose must be held
 
    def __init__(self) -> None:
@@ -497,6 +505,8 @@ class ThumbsCall:
            return self.ACCEPT
        if is_thumbsdown(lm):
            return self.DECLINE
+       if is_fist(lm):
+           return self.FIST
        return None
 
    def update(self, lm) -> str | None:
@@ -521,7 +531,7 @@ class ThumbsCall:
 
    def score(self, lm) -> dict[str, float]:
        """Call after update(). Fills as you hold the pose, full once fired."""
-       out = {self.ACCEPT: 0.0, self.DECLINE: 0.0}
+       out = {self.ACCEPT: 0.0, self.DECLINE: 0.0, self.FIST: 0.0}
        kind = self._current(lm)
        if kind is not None and kind == self._kind:
            out[kind] = 1.0 if self._fired else _clamp((time.monotonic() - self._start) / self._hold_s)
