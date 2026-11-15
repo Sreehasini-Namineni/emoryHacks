@@ -168,13 +168,6 @@ def is_thumbsdown(lm):
         and pinky < 0.75
     )
 
-def is_fist(lm):
-    """All four fingers curled and the thumb tucked in (not sticking out like thumbs up/down)."""
-    palm = _d(lm[0], lm[9]) + 1e-6
-    fingers = (_len(lm, 8, 5), _len(lm, 12, 9), _len(lm, 16, 13), _len(lm, 20, 17))
-    thumb = _len(lm, 4, 2) / palm
-    return all(f / palm < 0.75 for f in fingers) and thumb <= 0.7
-
 class PeaceRotation:
     """Peace sign held while the wrist travels in a circle.
 

@@ -16,6 +16,7 @@ GESTURES = {
     "thumbs_up": "Thumbs up",
     "thumbs_down": "Thumbs down",
     "closed_fist": "Closed fist",
+    "palm_to_fist": "Open palm -> fist",
 }
 
 class Controls:
@@ -38,6 +39,7 @@ class Controls:
             "temp_down": ("Temp down", self.temp_down),
             "accept_call": ("Accept call", self.accept_call),
             "decline_call": ("Decline call", self.decline_call),
+            "play_pause": ("Play / pause", self.toggle_play),
         }
         # control id -> gesture id (None = off). Edited from the settings popup.
         self.bindings = {
@@ -51,6 +53,7 @@ class Controls:
             "temp_down": "three_counterclockwise",
             "accept_call": "thumbs_up",
             "decline_call": "thumbs_down",
+            "play_pause": "palm_to_fist",
         }
 
     def handle(self, gesture: str) -> None:

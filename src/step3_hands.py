@@ -17,7 +17,7 @@ from camera import open_webcam
 from controls import Controls
 from drawing import draw_hand
 from gestures import PeaceRotation, is_thumbsup, is_thumbsdown, ThreeRotation
-from gestures import ThreeSideways, ThreeTurn, is_three, ThumbsCall, is_fist, PalmToFist
+from gestures import ThreeSideways, ThreeTurn, is_three, ThumbsCall, is_fist, PalmToFist, STEP
 from confidence import ConfidencePanel, all_scores
 from settings_ui import SettingsUI  # ADDED
 
@@ -62,7 +62,8 @@ def main() -> None:
     temp_rot = ThreeRotation()
     thumbs_call = ThumbsCall()
     play_pause = PalmToFist()
-    last_temp = -1e9  # when temp last changed (skip / AC are blocked right after)
+    last_temp = -1e9  # when the temp circle last moved on (skip / AC are blocked right after)
+    last_play = -1e9  # when play/pause last toggled (that fist is not also a closed_fist)
     controls = Controls()
     panel = ConfidencePanel()
     settings = SettingsUI(panel, controls)  # ADDED
@@ -94,29 +95,35 @@ def main() -> None:
             ac = ac_move.update(lm)
             temp = temp_rot.update(lm, frame.shape[1] / frame.shape[0])
             now = time.monotonic()
-            if temp:
+            # A full lap is needed for a temp change, so treat 30 deg of circling as "circling".
+            circling = abs(temp_rot.offset) >= math.radians(30)
+            if temp or circling:
                 # Hand is circling for temp: drop any skip / AC it looked like.
                 last_temp = now
                 track_turn.cancel()
                 ac_move.cancel()
                 track = ac = None
-                controls.handle(temp)
+                if temp:
+                    controls.handle(temp)
             elif now - last_temp < 1.0:
                 track = ac = None  # still circling (or just stopped): no skip / AC
             elif track or ac:
                 temp_rot._reset()  # that was a skip / AC move, not a circle
                 controls.handle(track or ac)
             call = thumbs_call.update(lm)
-            if call:
-                controls.handle(call)
             play = play_pause.update(lm)
             if play:
+                last_play = now
                 controls.handle(play)
+            if call == ThumbsCall.FIST and now - last_play < 1.0:
+                call = None  # same fist that just toggled play/pause
+            if call:
+                controls.handle(call)
             # Scores are read after the detectors have updated this frame.
             panel.update(all_scores((tracker, track_turn, ac_move, temp_rot, thumbs_call, play_pause), lm),
                 fired=[g for g in (gesture, track, ac, temp, call, play) if g])
 
-            progress = min(1.0, max(abs(tracker.offset), abs(temp_rot.offset)) / math.radians(30))
+            progress = min(1.0, max(abs(tracker.offset), abs(temp_rot.offset)) / STEP)
             hud.draw(frame, result.hand_landmarks, lm, controls, progress)
             panel.draw(frame)
             settings.draw(frame)  # ADDED
