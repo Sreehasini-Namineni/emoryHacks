@@ -21,7 +21,7 @@ class ConfidencePanel:
     def __init__(self, top_n=3, alpha=0.35, show_floor=0.15, flash_s=0.4, stickiness=0.05):
         self.top_n, self.alpha, self.show_floor = top_n, alpha, show_floor
         self.flash_s, self.stickiness = flash_s, stickiness
-        self.visible = True                  # ADDED: toggled from the settings popup
+        self.visible = True                  # standalone bottom-left bars (draw); off when the dev tools window owns them
         self._smooth: dict[str, float] = {}
         self._flash: dict[str, float] = {}
         self._shown: list[str] = []
@@ -46,13 +46,9 @@ class ConfidencePanel:
         )
         self._shown = [n for n in ranked if self._value(n, now) >= self.show_floor][: self.top_n]
 
-    def draw(self, frame) -> None:
-        if not self.visible:                 # ADDED
-            return
+    def _draw_rows(self, frame, x0: int, y0: int, bar_w: int = 220) -> None:
         now = time.monotonic()
-        h = frame.shape[0]
-        x0, bar_w, bar_h, gap = 16, 220, 14, 34
-        y0 = h - 16 - gap * self.top_n
+        bar_h, gap = 14, 34
         for i, name in enumerate(self._shown):
             v = self._value(name, now)
             y = y0 + i * gap
@@ -63,3 +59,18 @@ class ConfidencePanel:
             cv2.rectangle(frame, (x0, by), (x0 + bar_w, by + bar_h), (60, 60, 60), -1)
             cv2.rectangle(frame, (x0, by), (x0 + int(bar_w * v), by + bar_h), color, -1)
             cv2.line(frame, (x0 + bar_w, by - 3), (x0 + bar_w, by + bar_h + 3), (255, 255, 255), 2)
+
+    def draw(self, frame) -> None:
+        """Standalone bars in the bottom-left corner."""
+        if not self.visible:
+            return
+        h = frame.shape[0]
+        self._draw_rows(frame, 16, h - 16 - 34 * self.top_n)
+
+    def draw_at(self, frame, x0: int, y0: int, bar_w: int = 220) -> None:
+        """Bars at a given position (used by the dev tools popup). Ignores .visible."""
+        if not self._shown:
+            cv2.putText(frame, "no gesture in progress", (x0, y0 + 14),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (160, 160, 160), 1, cv2.LINE_AA)
+            return
+        self._draw_rows(frame, x0, y0, bar_w)
