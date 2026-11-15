@@ -127,11 +127,12 @@ def main() -> None:
             cv2.putText(frame, status, (16, 36), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
             cv2.putText(frame, f"Volume {controls.volume}", (16, 76),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-            cv2.putText(frame, controls.last_action, (16, 116),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
+            if time.monotonic() - controls.last_action_time < 2.0:
+                cv2.putText(frame, controls.last_action, (16, 116),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
             cv2.putText(frame, f"Rot {math.degrees(tracker.offset):+.0f} deg", (16, 156),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
-            cv2.putText(frame, f"AC {controls.ac}", (16, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            cv2.putText(frame, f"AC {controls.ac}", (16, 236), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             cv2.putText(frame, f"Temp {controls.temp}F", (16, 196), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             panel.draw(frame)
             settings.draw(frame)  # ADDED
