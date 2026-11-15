@@ -10,6 +10,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import math
+from hud import Hud
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camera import open_webcam
@@ -65,6 +66,7 @@ def main() -> None:
     controls = Controls()
     panel = ConfidencePanel()
     settings = SettingsUI(panel, controls)  # ADDED
+    hud = Hud()
     cv2.namedWindow("Step 3 — Hands")  # ADDED
     cv2.setMouseCallback("Step 3 — Hands", settings.on_mouse)  # ADDED
     last_ts = 0
@@ -114,42 +116,17 @@ def main() -> None:
             panel.update(all_scores((tracker, track_turn, ac_move, temp_rot, thumbs_call, play_pause), lm),
                 fired=[g for g in (gesture, track, ac, temp, call, play) if g])
 
-            for landmarks in result.hand_landmarks:
-                draw_hand(frame, landmarks)
 
-            if lm is not None:
-                status = ("PEACE" if tracker.holding 
-                          else "THUMBS UP" if is_thumbsup(lm)
-                          else "THUMBS DOWN" if is_thumbsdown(lm)
-                          else "FIST" if is_fist(lm)
-                          else "THREECE" if is_three(lm)
-                          else f"HAND DETECTED ({n_hands})")
-
-                color = (0, 255, 0)
-            elif n_hands:
-                status = f"SHOW {CONTROL_HAND.upper()} HAND"
-                color = (0, 165, 255)
-            else:
-                status = "NO HAND"
-                color = (0, 0, 255)
-
-            cv2.putText(frame, status, (16, 36), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
-            cv2.putText(frame, f"Volume {controls.volume}", (16, 76),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-            if time.monotonic() - controls.last_action_time < 2.0:
-                cv2.putText(frame, controls.last_action, (16, 116),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
-            cv2.putText(frame, f"Rot {math.degrees(tracker.offset):+.0f} deg", (16, 156),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
-            cv2.putText(frame, f"AC {controls.ac}", (16, 236), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-            cv2.putText(frame, f"Temp {controls.temp}F", (16, 196), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
             cv2.putText(frame, "Playing" if controls.playing else "Paused", (16, 276),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            progress = min(1.0, max(abs(tracker.offset), abs(temp_rot.offset)) / math.radians(30))
+            hud.draw(frame, result.hand_landmarks, lm, controls, progress)
             panel.draw(frame)
             settings.draw(frame)  # ADDED
             cv2.imshow("Step 3 — Hands", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+            cv2.setWindowProperty("Step 3 — Hands", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
     cap.release()
     cv2.destroyAllWindows()
