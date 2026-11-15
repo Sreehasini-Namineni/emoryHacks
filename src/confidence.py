@@ -21,6 +21,7 @@ class ConfidencePanel:
     def __init__(self, top_n=3, alpha=0.35, show_floor=0.15, flash_s=0.4, stickiness=0.05):
         self.top_n, self.alpha, self.show_floor = top_n, alpha, show_floor
         self.flash_s, self.stickiness = flash_s, stickiness
+        self.visible = True                  # ADDED: toggled from the settings popup
         self._smooth: dict[str, float] = {}
         self._flash: dict[str, float] = {}
         self._shown: list[str] = []
@@ -46,6 +47,8 @@ class ConfidencePanel:
         self._shown = [n for n in ranked if self._value(n, now) >= self.show_floor][: self.top_n]
 
     def draw(self, frame) -> None:
+        if not self.visible:                 # ADDED
+            return
         now = time.monotonic()
         h = frame.shape[0]
         x0, bar_w, bar_h, gap = 16, 220, 14, 34
